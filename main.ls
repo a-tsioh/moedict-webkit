@@ -739,80 +739,8 @@ function init-autocomplete
       fill-query it if it
       @valueMethod.apply @element, arguments
   }
-  $(\#query).autocomplete do
-    position:
-      my: "left bottom"
-      at: "left top"
-    select: (e, {item}) ->
-      if item?value is /^▶/
-        val = $(\#query).val!replace(/^→列出含有「/ '').replace(/」的詞$/ '')
-        if LANG is \c
-          window.open "mailto:xldictionary@gmail.com?subject=建議收錄：#val&body=出處及定義：", \_system
-        else
-          window.open "https://www.moedict.tw/#{ HASH-OF[LANG].slice(1) }#val", \_system
-        return false
-      return false if item?value is /^\(/
-      fill-query item.value if item?value
-      return true
-    change: (e, {item}) ->
-      return if $ \#query .data \changing
-      return false if item?value is /^\(/
-      return $ \#query .data { +changing }
-      fill-query item.value if item?value
-      return $ \#query .data { -changing }
-      return true
-    source: ({term}, cb) ->
-      term = "。" if term is \=諺語 and LANG is \t
-      term = "，" if term is \=諺語 and LANG is \h
-      $('iframe').fadeOut \fast
-      return cb [] unless term.length
-      return trs_lookup(term, cb) unless LANG isnt \t or term is /[^\u0000-\u00FF]/ or term is /[,;0-9]/
-      return pinyin_lookup(term, cb) if LANG is \a and term is /^[a-zA-Z1-4 ]+$/
-      return cb ["→列出含有「#{term}」的詞"] if width-is-xs! and term isnt /[「」。，?.*_% ]/
-      return do-lookup(term) if term is /^[@=]/
-      term.=replace(/^→列出含有「/ '')
-      term.=replace(/」的詞$/ '')
-      term.=replace(/\*/g '%')
-      term.=replace(/[-—]/g    \－)
-      term.=replace(/[,﹐]/g   \，)
-      term.=replace(/[;﹔]/g   \；)
-      term.=replace(/[﹒．]/g  \。)
-      regex = term
-      if term is /\s$/ or term is /\^/
-        regex -= /\^/g
-        regex -= /\s*$/g
-        regex = '"' + regex
-      else
-        regex = '[^"]*' + regex unless term is /[?._%]/
-      if term is /^\s/ or term is /\$/
-        regex -= /\$/g
-        regex -= /\s*/g
-        regex += '"'
-      else
-        regex = regex + '[^"]*' unless term is /[?._%]/
-      regex -= /\s/g
-      if term is /[%?._]/
-        regex.=replace(/[?._]/g, '[^"]')
-        regex.=replace(/%/g '[^"]*')
-        regex = "\"#regex\""
-      regex.=replace(/\(\)/g '')
-      try results = INDEX[LANG].match(//#{ b2g regex }//g)
-      results ||= xref-of(term, (if LANG is \a then \t else \a), LANG)
-      if LANG is \h and term is \我
-        results.unshift \𠊎
-      if LANG is \t => for v in xref-of(term, \tv, \t).reverse!
-        results.unshift v unless v in results
-      return cb ["▶找不到。建議收錄？"] if LANG is \c and not results?length
-      return cb ["▶找不到。分享這些字？"] if LANG isnt \c and not results?length
-      return cb [''] unless results?length
-      do-lookup(results.0 - /"/g) if results.length is 1
-      MaxResults = if width-is-xs! then 400 else 1024
-      if results.length > MaxResults
-        more = "(僅顯示前 #MaxResults 筆)"
-        results.=slice(0, MaxResults)
-        results.push more
-      return cb (map (- /"/g), results)
-      #return cb ((results.join(',') - /"/g) / ',')
+  q = React.createElement React.View.AutoCompQuery, {lang:LANG, get:GET, cached:CACHED}
+  React.render q, (document.getElementById 'query-container')
 
 PUA2UNI = {
   \⿰𧾷百 : \󾜅
@@ -821,10 +749,6 @@ PUA2UNI = {
   \⿰虫念 : \󿑂
   \⿺皮卜 : \󿕅
 }
-trs_lookup = (term,cb) ->
-  data <- GET "https://www.moedict.tw/lookup/trs/#{term}"
-  data.=replace /[⿰⿸⿺](?:𧾷|.)./g -> PUA2UNI[it]
-  cb( data / '|' )
 
 pinyin_lookup = (query,cb) !->
   res = []

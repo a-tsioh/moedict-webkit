@@ -132,7 +132,8 @@ html(lang='zh-Hant', xml:lang='zh-Hant', manifest="manifest.appcache")
       span.lang-c-only: gcse:search(webSearchQueryAddition='+"兩岸萌典" -"台語萌典" -"客語萌典" -"推特" -"moedict tw lab" -"moedict tw dodo"')
 
     #query-box.query-box
-      input#query.query(type='search', style='display: none', autofocus='', autocomplete='off', placeholder='請輸入欲查詢的字詞')
+      #query-container
+      // input#query.query(type='search', style='display: none', autofocus='', autocomplete='off', placeholder='請輸入欲查詢的字詞')
       #timeline.hidden-xs(style='position: absolute; top: 70px; right: 5px; left: 15px; bottom: 20px')
         a.twitter-timeline(data-chrome='transparent noheader',data-lang='zh-TW',href="https://twitter.com/moedict",data-widget-id="410481400710578176")
     #user-pref

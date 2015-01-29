@@ -694,6 +694,122 @@ RadicalTable = createClass do
       list ++= hr { style: { margin: 0, padding: 0, height: 0 } }
     return div-inline {}, title, div { className: \list }, ...list
 
+
+AutoCompQuery = React.create-class do
+  componentDidMount: ->
+    pinyin_lookup = (query,cb) !->
+      res = []
+      terms = query.replace(/^\s+/,"").replace(/\s+$/,"").replace(/\s+/, " ").split(/ /)
+      for term in terms
+        data <- GET "lookup/pinyin/#{term}.json"
+        res.push( $.parseJSON(data) )
+        if res.length == terms.length
+          seen = {}
+          for titles in res
+            for t in titles
+              if !seen[t]?
+                seen[t] = 0
+              seen[t]++
+          x=[]
+          for t of seen
+            if (seen[t] == terms.length)
+              x.push(t)
+          if x.length == 0
+            cb(["無符合之詞"])
+          else
+            cb(x)
+
+
+    trs_lookup = (term,cb) ->
+      data <- GET "http://localhost:8042/lookup2/trs/#{term}"
+      data.=replace /[⿰⿸⿺](?:𧾷|.)./g -> PUA2UNI[it]
+      data = $.parseJSON(data)
+      cb( data.strict )
+    LANG = @props.lang
+    GET = @props.get
+    CACHED = @props.cached
+    el = @refs.query_input.getDOMNode!
+    el.id = 'query'
+    jq = $ el
+    jq.autocomplete do
+      position:
+        my: "left bottom"
+        at: "left top"
+      select: (e, {item}) -> 
+        if item?value is /^▶/
+          val = $(\#query).val!replace(/^→列出含有「/ '').replace(/」的詞$/ '')
+          if LANG is \c
+            window.open "mailto:xldictionary@gmail.com?subject=建議收錄：#val&body=出處及定義：", \_system
+          else
+            window.open "https://www.moedict.tw/#{ HASH-OF[LANG].slice(1) }#val", \_system
+          return false
+        return false if item?value is /^\(/
+        fill-query item.value if item?value
+        return true
+      change: (e, {item}) ->
+        return if $ \#query .data \changing
+        return false if item?value is /^\(/
+        return $ \#query .data { +changing }
+        fill-query item.value if item?value
+        return $ \#query .data { -changing }
+        return true
+      source: ({term}, cb) ->
+        term = "。" if term is \=諺語 and LANG is \t
+        term = "，" if term is \=諺語 and LANG is \h
+        $('iframe').fadeOut \fast
+        return cb [] unless term.length
+        return trs_lookup(term, cb) unless LANG isnt \t or term is /[^\u0000-\u00FF]/ or term is /[,;]/
+        return pinyin_lookup(term, cb) if LANG is \a and term is /^[a-zA-Z1-4 ]+$/
+        return cb ["→列出含有「#{term}」的詞"] if width-is-xs! and term isnt /[「」。，?.*_% ]/
+        return do-lookup(term) if term is /^[@=]/
+        term.=replace(/^→列出含有「/ '')
+        term.=replace(/」的詞$/ '')
+        term.=replace(/\*/g '%')
+        term.=replace(/[-—]/g    \－)
+        term.=replace(/[,﹐]/g   \，)
+        term.=replace(/[;﹔]/g   \；)
+        term.=replace(/[﹒．]/g  \。)
+        regex = term
+        if term is /\s$/ or term is /\^/
+          regex -= /\^/g
+          regex -= /\s*$/g
+          regex = '"' + regex
+        else
+          regex = '[^"]*' + regex unless term is /[?._%]/
+        if term is /^\s/ or term is /\$/
+          regex -= /\$/g
+          regex -= /\s*/g
+          regex += '"'
+        else
+          regex = regex + '[^"]*' unless term is /[?._%]/
+        regex -= /\s/g
+        if term is /[%?._]/
+          regex.=replace(/[?._]/g, '[^"]')
+          regex.=replace(/%/g '[^"]*')
+          regex = "\"#regex\""
+        regex.=replace(/\(\)/g '')
+        try results = INDEX[LANG].match(//#{ b2g regex }//g)
+        results ||= xref-of(term, (if LANG is \a then \t else \a), LANG)
+        if LANG is \h and term is \我
+          results.unshift \𠊎
+        if LANG is \t => for v in xref-of(term, \tv, \t).reverse!
+          results.unshift v unless v in results
+        return cb ["▶找不到。建議收錄？"] if LANG is \c and not results?length
+        return cb ["▶找不到。分享這些字？"] if LANG isnt \c and not results?length
+        return cb [''] unless results?length
+        do-lookup(results.0 - /"/g) if results.length is 1
+        MaxResults = if width-is-xs! then 400 else 1024
+        if results.length > MaxResults
+          more = "(僅顯示前 #MaxResults 筆)"
+          results.=slice(0, MaxResults)
+          results.push more
+        return cb (map (- /"/g), results)
+  render: ->
+    div null,
+        input {ref: 'query_input',placeholder:'請輸入欲查詢的字詞(react)', autoComplete: \off, autoFocus: '', style: {width:'100%'} }
+
+
+
 List = createClass do
   render: ->
     {terms, id, H, LRU} = @props
@@ -853,7 +969,7 @@ decodeLangPart = (LANG-OR-H, part='') ->
   part.=replace /([)）])/g "$1\u200B"
   return part
 
-module.exports = { UserPref, Result, DropDown, Nav, Links, decodeLangPart }
+module.exports = { UserPref, Result, DropDown, Nav, Links, decodeLangPart, AutoCompQuery }
 
 PinYinMap =
   "WadeGiles": {"zha":"cha","cha":"ch'a","zhai":"chai","chai":"ch'ai","zhan":"chan","chan":"ch'an","zhang":"chang","chang":"ch'ang","zhao":"chao","chao":"ch'ao","zhe":"che","che":"ch'e","zhei":"chei","zhen":"chen","chen":"ch'en","zheng":"cheng","cheng":"ch'eng","ji":"chi","qi":"ch'i","jia":"chia","qia":"ch'ia","jiang":"chiang","qiang":"ch'iang","jiao":"chiao","qiao":"ch'iao","jie":"chieh","qie":"ch'ieh","jian":"chien","qian":"ch'ien","zhi":"chih","chi":"ch'ih","jin":"chin","qin":"ch'in","jing":"ching","qing":"ch'ing","jiu":"chiu","qiu":"ch'iu","jiong":"chiung","qiong":"ch'iung","zhuo":"cho","chuo":"ch'o","zhou":"chou","chou":"ch'ou","zhu":"chu","chu":"ch'u","zhua":"chua","chua":"ch'ua","zhuai":"chuai","chuai":"ch'uai","zhuan":"chuan","chuan":"ch'uan","zhuang":"chuang","chuang":"ch'uang","zhui":"chui","chui":"ch'ui","zhun":"chun","chun":"ch'un","zhong":"chung","chong":"ch'ung","ju":"chü","qu":"ch'ü","juan":"chüan","quan":"ch'üan","jue":"chüeh","que":"ch'üeh","jun":"chün","qun":"ch'ün","er":"erh","he":"ho","xi":"hsi","xia":"hsia","xiang":"hsiang","xiao":"hsiao","xie":"hsieh","xian":"hsien","xin":"hsin","xing":"hsing","xiu":"hsiu","xiong":"hsiung","xu":"hsü","xuan":"hsüan","xue":"hsüeh","xun":"hsün","hong":"hung","ran":"jan","rang":"jang","rao":"jao","re":"je","ren":"jen","reng":"jeng","ri":"jih","ruo":"jo","rou":"jou","ru":"ju","ruan":"juan","rui":"jui","run":"jun","rong":"jung","ga":"ka","ka":"k'a","gai":"kai","kai":"k'ai","gan":"kan","kan":"k'an","gang":"kang","kang":"k'ang","gao":"kao","kao":"k'ao","gei":"kei","gen":"ken","ken":"k'en","geng":"keng","keng":"k'eng","ge":"ko","ke":"k'o","gou":"kou","kou":"k'ou","gu":"ku","ku":"k'u","gua":"kua","kua":"k'ua","guai":"kuai","kuai":"k'uai","guan":"kuan","kuan":"k'uan","guang":"kuang","kuang":"k'uang","gui":"kuei","kui":"k'uei","gun":"kun","kun":"k'un","gong":"kung","kong":"k'ung","guo":"kuo","kuo":"k'uo","lie":"lieh","lian":"lien","luo":"lo","long":"lung","lv":"lü","lve":"lüeh","lvn":"lün","mie":"mieh","mian":"mien","nie":"nieh","nian":"nien","nuo":"no","nong":"nung","nv":"nü","nve":"nüeh","ba":"pa","pa":"p'a","bai":"pai","pai":"p'ai","ban":"pan","pan":"p'an","bang":"pang","pang":"p'ang","bao":"pao","pao":"p'ao","bei":"pei","pei":"p'ei","ben":"pen","pen":"p'en","beng":"peng","peng":"p'eng","bi":"pi","pi":"p'i","biao":"piao","piao":"p'iao","bie":"pieh","pie":"p'ieh","bian":"pien","pian":"p'ien","bin":"pin","pin":"p'in","bing":"ping","ping":"p'ing","bo":"po","po":"p'o","pou":"p'ou","bu":"pu","pu":"p'u","shi":"shih","shong":"shung","suo":"so","si":"ssu","song":"sung","da":"ta","ta":"t'a","dai":"tai","tai":"t'ai","dan":"tan","tan":"t'an","dang":"tang","tang":"t'ang","dao":"tao","tao":"t'ao","de":"te","te":"t'e","dei":"tei","den":"ten","deng":"teng","teng":"t'eng","di":"ti","ti":"t'i","diang":"tiang","diao":"tiao","tiao":"t'iao","die":"tieh","tie":"t'ieh","dian":"tien","tian":"t'ien","ding":"ting","ting":"t'ing","diu":"tiu","duo":"to","tuo":"t'o","dou":"tou","tou":"t'ou","za":"tsa","ca":"ts'a","zai":"tsai","cai":"ts'ai","zan":"tsan","can":"ts'an","zang":"tsang","cang":"ts'ang","zao":"tsao","cao":"ts'ao","ze":"tse","ce":"ts'e","zei":"tsei","zen":"tsen","cen":"ts'en","zeng":"tseng","ceng":"ts'eng","zuo":"tso","cuo":"ts'o","zou":"tsou","cou":"ts'ou","zu":"tsu","cu":"ts'u","zuan":"tsuan","cuan":"ts'uan","zui":"tsui","cui":"ts'ui","zun":"tsun","cun":"ts'un","zong":"tsung","cong":"ts'ung","du":"tu","tu":"t'u","duan":"tuan","tuan":"t'uan","dui":"tui","tui":"t'ui","dun":"tun","tun":"t'un","dong":"tung","tong":"t'ung","zi":"tzu","ci":"tz'u","yan":"yen","ye":"yeh","you":"yu","yong":"yung","yu":"yü","yuan":"yüan","yue":"yüeh","yun":"yün"}
